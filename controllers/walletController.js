@@ -1,11 +1,9 @@
-// ===========================================
-// Controller: Wallet Controller
-// CRUD manajemen wallet + top up saldo
-// ===========================================
-
-const Wallet = require('../models/walletModel');
-const Transaction = require('../models/transactionModel');
-const { successResponse, errorResponse } = require('../utils/responseHelper');
+const Wallet = require('../models/wallet');
+const User = require('../models/user');
+const Transaction = require('../models/transaction');
+const AuditLog = require('../models/auditLog');
+const { successResponse, errorResponse } = require('../utils/response');
+const { verifyTransactionPin } = require('../utils/pin');
 
 /**
  * GET /api/wallets - Mengambil semua wallet
@@ -69,7 +67,7 @@ const getWalletById = async (req, res) => {
  */
 const topUp = async (req, res) => {
   try {
-    const { amount, description } = req.body;
+    const { amount, description, transaction_pin } = req.body;
 
     // Validasi amount
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
@@ -84,6 +82,11 @@ const topUp = async (req, res) => {
     }
     if (topUpAmount > 10000000) {
       return errorResponse(res, 'Maksimal top up Rp 10.000.000', 400);
+    }
+
+    const isPinValid = await verifyTransactionPin(req.user.id, transaction_pin);
+    if (!isPinValid) {
+      return errorResponse(res, 'PIN transaksi tidak valid', 401);
     }
 
     // Ambil wallet user yang login
@@ -106,7 +109,7 @@ const topUp = async (req, res) => {
     const refNumber = `TU${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
     // Catat transaksi
-    await Transaction.create({
+    const transactionResult = await Transaction.create({
       wallet_id: wallet.id,
       transaction_type: 'topup',
       amount: topUpAmount,
@@ -114,6 +117,16 @@ const topUp = async (req, res) => {
       reference_number: refNumber,
       recipient_wallet_id: null,
       status: 'success',
+    });
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'TOPUP',
+      entity: 'transactions',
+      entity_id: transactionResult.insertId,
+      old_value: { balance: wallet.balance },
+      new_value: { balance: newBalance, amount: topUpAmount, reference_number: refNumber },
+      ip_address: req.ip,
     });
 
     // Ambil data wallet terbaru
@@ -136,11 +149,11 @@ const topUp = async (req, res) => {
  */
 const transfer = async (req, res) => {
   try {
-    const { wallet_number, amount, description } = req.body;
+    const { phone, amount, description, transaction_pin } = req.body;
 
     // Validasi input
-    if (!wallet_number) {
-      return errorResponse(res, 'Nomor wallet tujuan wajib diisi', 400);
+    if (!phone) {
+      return errorResponse(res, 'Nomor telepon tujuan wajib diisi', 400);
     }
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
       return errorResponse(res, 'Jumlah transfer harus berupa angka lebih dari 0', 400);
@@ -152,6 +165,11 @@ const transfer = async (req, res) => {
       return errorResponse(res, 'Minimal transfer Rp 1.000', 400);
     }
 
+    const isPinValid = await verifyTransactionPin(req.user.id, transaction_pin);
+    if (!isPinValid) {
+      return errorResponse(res, 'PIN transaksi tidak valid', 401);
+    }
+
     // Ambil wallet pengirim
     const senderWallet = await Wallet.findByUserId(req.user.id);
     if (!senderWallet) {
@@ -161,8 +179,13 @@ const transfer = async (req, res) => {
       return errorResponse(res, 'Wallet pengirim tidak aktif', 400);
     }
 
-    // Ambil wallet penerima
-    const recipientWallet = await Wallet.findByWalletNumber(wallet_number);
+    const recipientUser = await User.findByPhone(phone);
+    if (!recipientUser) {
+      return errorResponse(res, 'User tujuan dengan nomor telepon tersebut tidak ditemukan', 404);
+    }
+
+    // Ambil wallet penerima berdasarkan user pemilik nomor telepon
+    const recipientWallet = await Wallet.findByUserId(recipientUser.id);
     if (!recipientWallet) {
       return errorResponse(res, 'Wallet tujuan tidak ditemukan', 404);
     }
@@ -191,20 +214,38 @@ const transfer = async (req, res) => {
     const refNumber = `TF${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
     // Catat transaksi
-    await Transaction.create({
+    const transactionResult = await Transaction.create({
       wallet_id: senderWallet.id,
       transaction_type: 'transfer',
       amount: transferAmount,
-      description: description || `Transfer ke ${wallet_number}`,
+      description: description || `Transfer ke ${phone}`,
       reference_number: refNumber,
       recipient_wallet_id: recipientWallet.id,
       status: 'success',
     });
 
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'TRANSFER',
+      entity: 'transactions',
+      entity_id: transactionResult.insertId,
+      old_value: {
+        sender_balance: senderWallet.balance,
+        recipient_balance: recipientWallet.balance,
+      },
+      new_value: {
+        sender_balance: newSenderBalance,
+        recipient_balance: newRecipientBalance,
+        amount: transferAmount,
+        reference_number: refNumber,
+      },
+      ip_address: req.ip,
+    });
+
     return successResponse(res, 'Transfer berhasil', {
       reference_number: refNumber,
       amount: transferAmount,
-      recipient_wallet: wallet_number,
+      recipient_phone: phone,
       sender_balance: newSenderBalance,
     }, 201);
   } catch (error) {
@@ -236,6 +277,16 @@ const updateWalletStatus = async (req, res) => {
     await Wallet.updateStatus(id, status);
     const updatedWallet = await Wallet.findById(id);
 
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'UPDATE_WALLET_STATUS',
+      entity: 'wallets',
+      entity_id: parseInt(id),
+      old_value: { status: wallet.status },
+      new_value: { status: updatedWallet.status },
+      ip_address: req.ip,
+    });
+
     return successResponse(res, 'Status wallet berhasil diupdate', { wallet: updatedWallet });
   } catch (error) {
     console.error('Update wallet status error:', error);
@@ -262,6 +313,16 @@ const deleteWallet = async (req, res) => {
     }
 
     await Wallet.delete(id);
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'DELETE_WALLET',
+      entity: 'wallets',
+      entity_id: parseInt(id),
+      old_value: wallet,
+      new_value: null,
+      ip_address: req.ip,
+    });
     return successResponse(res, 'Wallet berhasil dihapus');
   } catch (error) {
     console.error('Delete wallet error:', error);

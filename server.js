@@ -1,8 +1,3 @@
-// ===========================================
-// Server.js - Entry Point Aplikasi
-// Backend Financial Technology Wallet
-// ===========================================
-
 const express = require('express');
 const cors = require('cors');
 require('dotenv').config();
@@ -15,14 +10,12 @@ const authRoutes = require('./routes/authRoutes');
 const userRoutes = require('./routes/userRoutes');
 const walletRoutes = require('./routes/walletRoutes');
 const transactionRoutes = require('./routes/transactionRoutes');
+const auditLogRoutes = require('./routes/auditLogRoutes');
+const dashboardRoutes = require('./routes/dashboardRoutes');
 
 // Inisialisasi Express app
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-// ===========================================
-// Middleware Global
-// ===========================================
 
 // Parse JSON request body
 app.use(express.json());
@@ -32,10 +25,6 @@ app.use(express.urlencoded({ extended: true }));
 
 // Aktifkan CORS (Cross-Origin Resource Sharing)
 app.use(cors());
-
-// ===========================================
-// Routes
-// ===========================================
 
 // Route utama - health check
 app.get('/', (req, res) => {
@@ -48,6 +37,8 @@ app.get('/', (req, res) => {
       users: '/api/users',
       wallets: '/api/wallets',
       transactions: '/api/transactions',
+      audit_logs: '/api/audit-logs',
+      dashboard: '/api/dashboard',
     },
   });
 });
@@ -63,6 +54,12 @@ app.use('/api/wallets', walletRoutes);
 
 // Transaction CRUD routes (payment, mutasi, dll)
 app.use('/api/transactions', transactionRoutes);
+
+// Audit log routes
+app.use('/api/audit-logs', auditLogRoutes);
+
+// Dashboard routes
+app.use('/api/dashboard', dashboardRoutes);
 
 // ===========================================
 // Error Handling

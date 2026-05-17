@@ -1,16 +1,11 @@
-// ===========================================
-// Routes: User Routes
-// Endpoint CRUD untuk manajemen user
-// ===========================================
-
 const express = require('express');
 const router = express.Router();
 const { getAllUsers, getUserById, createUser, updateUser, deleteUser } = require('../controllers/userController');
-const verifyToken = require('../middleware/verifyToken');
+const authenticateToken = require('../middleware/auth');
 const roleAuthorization = require('../middleware/roleAuthorization');
 
 // Semua route butuh token
-router.use(verifyToken);
+router.use(authenticateToken);
 
 // GET /api/users       - Admin: lihat semua user
 router.get('/', roleAuthorization('admin'), getAllUsers);

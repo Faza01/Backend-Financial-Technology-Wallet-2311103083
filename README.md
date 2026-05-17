@@ -154,6 +154,7 @@ Mendaftarkan user baru ke sistem.
   "name": "Faza Raziq",
   "email": "faza@example.com",
   "password": "password123",
+  "transaction_pin": "123456",
   "phone": "081234567890",
   "role": "user"
 }
@@ -164,6 +165,7 @@ Mendaftarkan user baru ke sistem.
 | name | string | ✅ | Nama lengkap user |
 | email | string | ✅ | Email unik |
 | password | string | ✅ | Minimal 6 karakter |
+| transaction_pin | string | ✅ | PIN transaksi 6 digit angka |
 | phone | string | ❌ | Nomor telepon |
 | role | string | ❌ | `admin` / `user` / `auditor` (default: `user`) |
 
@@ -342,6 +344,7 @@ wallets (1) ──── (N) transactions
 | name | VARCHAR(100) | Nama user |
 | email | VARCHAR(100) | Email (unique) |
 | password | VARCHAR(255) | Password (hashed bcrypt) |
+| transaction_pin | VARCHAR(255) | PIN transaksi (hashed bcrypt) |
 | phone | VARCHAR(20) | Nomor telepon |
 | role | ENUM | admin / user / auditor |
 | created_at | TIMESTAMP | Waktu dibuat |
@@ -379,3 +382,72 @@ wallets (1) ──── (N) transactions
 ## 📝 Lisensi
 
 ISC
+
+---
+
+## Fitur Wallet Tambahan
+
+### PIN Transaksi
+- `transaction_pin` wajib saat register dan create user.
+- Format PIN harus 6 digit angka, contoh: `"123456"`.
+- PIN wajib dikirim saat top up, transfer, dan payment.
+- PIN disimpan dalam bentuk hash bcrypt dan tidak ditampilkan di response API.
+
+Contoh body transaksi:
+```json
+{
+  "amount": 500000,
+  "description": "Top up saldo awal",
+  "transaction_pin": "123456"
+}
+```
+
+### Status Transaksi dan Reverse
+Status transaksi yang tersedia: `pending`, `success`, `failed`, dan `reversed`.
+
+Admin dapat melakukan reverse dengan endpoint:
+```http
+PUT /api/transactions/:id/status
+```
+
+Body:
+```json
+{
+  "status": "reversed"
+}
+```
+
+Aturan reverse:
+- Hanya transaksi berstatus `success` yang bisa di-reverse.
+- Reverse `topup` mengurangi saldo wallet.
+- Reverse `payment` mengembalikan saldo wallet.
+- Reverse `transfer` mengembalikan saldo pengirim dan mengurangi saldo penerima.
+- Reverse gagal jika saldo yang perlu dikurangi tidak mencukupi.
+
+### Audit Log
+Endpoint audit log hanya untuk role `admin` dan `auditor`.
+
+```http
+GET /api/audit-logs
+GET /api/audit-logs/:id
+```
+
+Audit dicatat untuk top up, transfer, payment, update status transaksi, reverse transaksi, update status wallet, dan delete transaksi/wallet.
+
+### Dashboard
+Endpoint dashboard hanya untuk role `admin` dan `auditor`.
+
+```http
+GET /api/dashboard
+```
+
+Dashboard berisi total user, total wallet, total saldo seluruh wallet, total transaksi, jumlah transaksi per status, jumlah transaksi per tipe, dan 5 transaksi terbaru.
+
+### Migration Database Lama
+Jika database sudah pernah dibuat sebelum fitur PIN/reverse, jalankan migration:
+
+```bash
+source database/migrations/001_add_missing_wallet_features.sql
+```
+
+User lama yang belum memiliki `transaction_pin` perlu diperbarui PIN-nya lewat endpoint update user sebelum bisa melakukan transaksi.

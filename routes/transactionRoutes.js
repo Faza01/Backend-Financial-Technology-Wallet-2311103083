@@ -1,19 +1,14 @@
-// ===========================================
-// Routes: Transaction Routes
-// Endpoint CRUD untuk manajemen transaksi
-// ===========================================
-
 const express = require('express');
 const router = express.Router();
 const {
   getAllTransactions, getMyTransactions, getTransactionById,
   payment, updateTransactionStatus, deleteTransaction,
 } = require('../controllers/transactionController');
-const verifyToken = require('../middleware/verifyToken');
+const authenticateToken = require('../middleware/auth');
 const roleAuthorization = require('../middleware/roleAuthorization');
 
 // Semua route butuh token
-router.use(verifyToken);
+router.use(authenticateToken);
 
 // GET /api/transactions     - Admin/Auditor: lihat semua transaksi
 router.get('/', roleAuthorization('admin', 'auditor'), getAllTransactions);

@@ -1,12 +1,8 @@
-// ===========================================
-// Controller: User Controller
-// CRUD manajemen user (khusus admin)
-// ===========================================
-
 const bcrypt = require('bcryptjs');
-const User = require('../models/userModel');
-const Wallet = require('../models/walletModel');
-const { successResponse, errorResponse } = require('../utils/responseHelper');
+const User = require('../models/user');
+const Wallet = require('../models/wallet');
+const { successResponse, errorResponse } = require('../utils/response');
+const { isValidTransactionPin, hashTransactionPin } = require('../utils/pin');
 
 /**
  * GET /api/users - Mengambil semua data user
@@ -56,11 +52,11 @@ const getUserById = async (req, res) => {
  */
 const createUser = async (req, res) => {
   try {
-    const { name, email, password, phone, role } = req.body;
+    const { name, email, password, phone, role, transaction_pin } = req.body;
 
     // Validasi input wajib
-    if (!name || !email || !password) {
-      return errorResponse(res, 'Field name, email, dan password wajib diisi', 400);
+    if (!name || !email || !password || !transaction_pin) {
+      return errorResponse(res, 'Field name, email, password, dan transaction_pin wajib diisi', 400);
     }
 
     // Validasi format email
@@ -72,6 +68,10 @@ const createUser = async (req, res) => {
     // Validasi panjang password
     if (password.length < 6) {
       return errorResponse(res, 'Password minimal 6 karakter', 400);
+    }
+
+    if (!isValidTransactionPin(transaction_pin)) {
+      return errorResponse(res, 'PIN transaksi harus 6 digit angka', 400);
     }
 
     // Validasi role
@@ -87,14 +87,22 @@ const createUser = async (req, res) => {
       return errorResponse(res, 'Email sudah terdaftar', 409);
     }
 
+    if (phone) {
+      const existingPhone = await User.findByPhone(phone);
+      if (existingPhone) {
+        return errorResponse(res, 'Nomor telepon sudah terdaftar', 409);
+      }
+    }
+
     // Hash password
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPin = await hashTransactionPin(transaction_pin);
 
     // Simpan user
     const result = await User.create({
       name, email, password: hashedPassword,
-      phone: phone || null, role: userRole,
+      phone: phone || null, role: userRole, transaction_pin: hashedPin,
     });
 
     // Buat wallet otomatis
@@ -115,7 +123,7 @@ const createUser = async (req, res) => {
 const updateUser = async (req, res) => {
   try {
     const { id } = req.params;
-    const { name, email, phone, role } = req.body;
+    const { name, email, phone, role, transaction_pin } = req.body;
 
     // Validasi: user biasa hanya boleh update data sendiri
     if (req.user.role === 'user' && parseInt(id) !== req.user.id) {
@@ -144,8 +152,23 @@ const updateUser = async (req, res) => {
       return errorResponse(res, 'Email sudah digunakan user lain', 409);
     }
 
+    if (phone) {
+      const phoneUser = await User.findByPhone(phone);
+      if (phoneUser && phoneUser.id !== parseInt(id)) {
+        return errorResponse(res, 'Nomor telepon sudah digunakan user lain', 409);
+      }
+    }
+
     // User biasa tidak boleh ubah role sendiri
     const updatedRole = req.user.role === 'admin' ? (role || existingUser.role) : existingUser.role;
+
+    let hashedPin = null;
+    if (transaction_pin !== undefined) {
+      if (!isValidTransactionPin(transaction_pin)) {
+        return errorResponse(res, 'PIN transaksi harus 6 digit angka', 400);
+      }
+      hashedPin = await hashTransactionPin(transaction_pin);
+    }
 
     await User.update(id, {
       name,
@@ -153,6 +176,10 @@ const updateUser = async (req, res) => {
       phone: phone || existingUser.phone,
       role: updatedRole,
     });
+
+    if (hashedPin) {
+      await User.updateTransactionPin(id, hashedPin);
+    }
 
     const updatedUser = await User.findById(id);
     return successResponse(res, 'Data user berhasil diupdate', { user: updatedUser });

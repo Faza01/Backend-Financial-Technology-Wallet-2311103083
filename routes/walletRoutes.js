@@ -1,8 +1,3 @@
-// ===========================================
-// Routes: Wallet Routes
-// Endpoint CRUD untuk manajemen wallet
-// ===========================================
-
 const express = require('express');
 const router = express.Router();
 const {
@@ -10,11 +5,11 @@ const {
   topUp, transfer,
   updateWalletStatus, deleteWallet,
 } = require('../controllers/walletController');
-const verifyToken = require('../middleware/verifyToken');
+const authenticateToken = require('../middleware/auth');
 const roleAuthorization = require('../middleware/roleAuthorization');
 
 // Semua route butuh token
-router.use(verifyToken);
+router.use(authenticateToken);
 
 // GET /api/wallets          - Admin/Auditor: lihat semua wallet
 router.get('/', roleAuthorization('admin', 'auditor'), getAllWallets);

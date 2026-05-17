@@ -1,11 +1,100 @@
-// ===========================================
-// Controller: Transaction Controller
-// CRUD manajemen transaksi + mutasi
-// ===========================================
+const Transaction = require('../models/transaction');
+const Wallet = require('../models/wallet');
+const AuditLog = require('../models/auditLog');
+const { successResponse, errorResponse } = require('../utils/response');
+const { verifyTransactionPin } = require('../utils/pin');
 
-const Transaction = require('../models/transactionModel');
-const Wallet = require('../models/walletModel');
-const { successResponse, errorResponse } = require('../utils/responseHelper');
+// melakukan reverse transaksi
+const reverseTransaction = async (transaction, actorUserId, ipAddress) => {
+  const amount = parseFloat(transaction.amount);
+  const senderWallet = await Wallet.findById(transaction.wallet_id);
+
+  if (!senderWallet) {
+    return { success: false, message: 'Wallet transaksi tidak ditemukan' };
+  }
+
+  const oldValue = {
+    transaction_status: transaction.status,
+    sender_balance: senderWallet.balance,
+  };
+
+  if (transaction.transaction_type === 'topup') {
+    if (parseFloat(senderWallet.balance) < amount) {
+      return { success: false, message: 'Saldo wallet tidak cukup untuk reverse top up' };
+    }
+
+    const newBalance = parseFloat(senderWallet.balance) - amount;
+    await Wallet.updateBalance(senderWallet.id, newBalance);
+    await Transaction.updateStatus(transaction.id, 'reversed');
+
+    await AuditLog.create({
+      user_id: actorUserId,
+      action: 'REVERSE_TRANSACTION',
+      entity: 'transactions',
+      entity_id: transaction.id,
+      old_value: oldValue,
+      new_value: { transaction_status: 'reversed', sender_balance: newBalance },
+      ip_address: ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  if (transaction.transaction_type === 'payment') {
+    const newBalance = parseFloat(senderWallet.balance) + amount;
+    await Wallet.updateBalance(senderWallet.id, newBalance);
+    await Transaction.updateStatus(transaction.id, 'reversed');
+
+    await AuditLog.create({
+      user_id: actorUserId,
+      action: 'REVERSE_TRANSACTION',
+      entity: 'transactions',
+      entity_id: transaction.id,
+      old_value: oldValue,
+      new_value: { transaction_status: 'reversed', sender_balance: newBalance },
+      ip_address: ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  if (transaction.transaction_type === 'transfer') {
+    const recipientWallet = await Wallet.findById(transaction.recipient_wallet_id);
+    if (!recipientWallet) {
+      return { success: false, message: 'Wallet penerima transaksi tidak ditemukan' };
+    }
+    if (parseFloat(recipientWallet.balance) < amount) {
+      return { success: false, message: 'Saldo wallet penerima tidak cukup untuk reverse transfer' };
+    }
+
+    const newSenderBalance = parseFloat(senderWallet.balance) + amount;
+    const newRecipientBalance = parseFloat(recipientWallet.balance) - amount;
+    await Wallet.updateBalance(senderWallet.id, newSenderBalance);
+    await Wallet.updateBalance(recipientWallet.id, newRecipientBalance);
+    await Transaction.updateStatus(transaction.id, 'reversed');
+
+    await AuditLog.create({
+      user_id: actorUserId,
+      action: 'REVERSE_TRANSACTION',
+      entity: 'transactions',
+      entity_id: transaction.id,
+      old_value: {
+        ...oldValue,
+        recipient_balance: recipientWallet.balance,
+      },
+      new_value: {
+        transaction_status: 'reversed',
+        sender_balance: newSenderBalance,
+        recipient_balance: newRecipientBalance,
+      },
+      ip_address: ipAddress,
+    });
+
+    return { success: true };
+  }
+
+  return { success: false, message: 'Tipe transaksi tidak dapat di-reverse' };
+};
 
 /**
  * GET /api/transactions - Mengambil semua transaksi
@@ -79,7 +168,7 @@ const getTransactionById = async (req, res) => {
  */
 const payment = async (req, res) => {
   try {
-    const { amount, description } = req.body;
+    const { amount, description, transaction_pin } = req.body;
 
     // Validasi input
     if (!amount || isNaN(amount) || parseFloat(amount) <= 0) {
@@ -90,6 +179,11 @@ const payment = async (req, res) => {
     }
 
     const paymentAmount = parseFloat(amount);
+
+    const isPinValid = await verifyTransactionPin(req.user.id, transaction_pin);
+    if (!isPinValid) {
+      return errorResponse(res, 'PIN transaksi tidak valid', 401);
+    }
 
     // Ambil wallet user
     const wallet = await Wallet.findByUserId(req.user.id);
@@ -113,7 +207,7 @@ const payment = async (req, res) => {
     const refNumber = `PY${Date.now()}${Math.floor(Math.random() * 1000)}`;
 
     // Catat transaksi
-    await Transaction.create({
+    const transactionResult = await Transaction.create({
       wallet_id: wallet.id,
       transaction_type: 'payment',
       amount: paymentAmount,
@@ -121,6 +215,21 @@ const payment = async (req, res) => {
       reference_number: refNumber,
       recipient_wallet_id: null,
       status: 'success',
+    });
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'PAYMENT',
+      entity: 'transactions',
+      entity_id: transactionResult.insertId,
+      old_value: { balance: wallet.balance },
+      new_value: {
+        balance: newBalance,
+        amount: paymentAmount,
+        description,
+        reference_number: refNumber,
+      },
+      ip_address: req.ip,
     });
 
     return successResponse(res, 'Pembayaran berhasil', {
@@ -144,7 +253,7 @@ const updateTransactionStatus = async (req, res) => {
     const { id } = req.params;
     const { status } = req.body;
 
-    const allowedStatuses = ['pending', 'success', 'failed'];
+    const allowedStatuses = ['pending', 'success', 'failed', 'reversed'];
     if (!status || !allowedStatuses.includes(status)) {
       return errorResponse(res, `Status tidak valid. Pilih: ${allowedStatuses.join(', ')}`, 400);
     }
@@ -154,8 +263,32 @@ const updateTransactionStatus = async (req, res) => {
       return errorResponse(res, 'Transaksi tidak ditemukan', 404);
     }
 
+    if (status === 'reversed') {
+      if (transaction.status !== 'success') {
+        return errorResponse(res, 'Hanya transaksi berstatus success yang dapat di-reverse', 400);
+      }
+
+      const reverseResult = await reverseTransaction(transaction, req.user.id, req.ip);
+      if (!reverseResult.success) {
+        return errorResponse(res, reverseResult.message, 400);
+      }
+
+      const reversedTransaction = await Transaction.findById(id);
+      return successResponse(res, 'Transaksi berhasil di-reverse', { transaction: reversedTransaction });
+    }
+
     await Transaction.updateStatus(id, status);
     const updatedTransaction = await Transaction.findById(id);
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'UPDATE_TRANSACTION_STATUS',
+      entity: 'transactions',
+      entity_id: parseInt(id),
+      old_value: { status: transaction.status },
+      new_value: { status: updatedTransaction.status },
+      ip_address: req.ip,
+    });
 
     return successResponse(res, 'Status transaksi berhasil diupdate', { transaction: updatedTransaction });
   } catch (error) {
@@ -178,6 +311,16 @@ const deleteTransaction = async (req, res) => {
     }
 
     await Transaction.delete(id);
+
+    await AuditLog.create({
+      user_id: req.user.id,
+      action: 'DELETE_TRANSACTION',
+      entity: 'transactions',
+      entity_id: parseInt(id),
+      old_value: transaction,
+      new_value: null,
+      ip_address: req.ip,
+    });
     return successResponse(res, 'Data transaksi berhasil dihapus');
   } catch (error) {
     console.error('Delete transaction error:', error);

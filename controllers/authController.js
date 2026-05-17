@@ -1,13 +1,9 @@
-// ===========================================
-// Controller: Auth Controller
-// Menangani logika register, login, dan profile
-// ===========================================
-
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
-const User = require('../models/userModel');
-const Wallet = require('../models/walletModel');
-const { successResponse, errorResponse } = require('../utils/responseHelper');
+const User = require('../models/user');
+const Wallet = require('../models/wallet');
+const { successResponse, errorResponse } = require('../utils/response');
+const { isValidTransactionPin, hashTransactionPin } = require('../utils/pin');
 
 /**
  * Register - Mendaftarkan user baru
@@ -15,11 +11,11 @@ const { successResponse, errorResponse } = require('../utils/responseHelper');
  */
 const register = async (req, res) => {
   try {
-    const { name, email, password, phone, role } = req.body;
+    const { name, email, password, phone, role, transaction_pin } = req.body;
 
     // Validasi input
-    if (!name || !email || !password) {
-      return errorResponse(res, 'Field name, email, dan password wajib diisi', 400);
+    if (!name || !email || !password || !transaction_pin) {
+      return errorResponse(res, 'Field name, email, password, dan transaction_pin wajib diisi', 400);
     }
 
     // Validasi format email sederhana
@@ -31,6 +27,10 @@ const register = async (req, res) => {
     // Validasi panjang password
     if (password.length < 6) {
       return errorResponse(res, 'Password minimal 6 karakter', 400);
+    }
+
+    if (!isValidTransactionPin(transaction_pin)) {
+      return errorResponse(res, 'PIN transaksi harus 6 digit angka', 400);
     }
 
     // Validasi role (hanya admin, user, auditor yang diperbolehkan)
@@ -46,9 +46,17 @@ const register = async (req, res) => {
       return errorResponse(res, 'Email sudah terdaftar', 409);
     }
 
+    if (phone) {
+      const existingPhone = await User.findByPhone(phone);
+      if (existingPhone) {
+        return errorResponse(res, 'Nomor telepon sudah terdaftar', 409);
+      }
+    }
+
     // Hash password menggunakan bcrypt
     const salt = await bcrypt.genSalt(10);
     const hashedPassword = await bcrypt.hash(password, salt);
+    const hashedPin = await hashTransactionPin(transaction_pin);
 
     // Simpan user baru ke database
     const result = await User.create({
@@ -57,6 +65,7 @@ const register = async (req, res) => {
       password: hashedPassword,
       phone: phone || null,
       role: userRole,
+      transaction_pin: hashedPin,
     });
 
     // Buat wallet otomatis untuk user baru
@@ -86,7 +95,7 @@ const login = async (req, res) => {
     }
 
     // Cari user berdasarkan email
-    const user = await User.findByEmail(email);
+    const user = await User.findByEmailWithPassword(email);
     if (!user) {
       return errorResponse(res, 'Email atau password salah', 401);
     }
@@ -126,13 +135,22 @@ const login = async (req, res) => {
 };
 
 /**
+ * Logout - Mengakhiri sesi di sisi client
+ * POST /api/auth/logout
+ * Endpoint protected - membutuhkan token JWT valid
+ */
+const logout = async (req, res) => {
+  return successResponse(res, 'Logout berhasil. Silakan hapus token di sisi client.');
+};
+
+/**
  * Get Profile - Mengambil data profil user yang sedang login
  * GET /api/auth/profile
  * Endpoint protected - membutuhkan token JWT valid
  */
 const getProfile = async (req, res) => {
   try {
-    // req.user diisi oleh middleware verifyToken
+    // req.user diisi oleh middleware auth
     const user = await User.findById(req.user.id);
 
     if (!user) {
@@ -152,4 +170,4 @@ const getProfile = async (req, res) => {
   }
 };
 
-module.exports = { register, login, getProfile };
+module.exports = { register, login, logout, getProfile };
