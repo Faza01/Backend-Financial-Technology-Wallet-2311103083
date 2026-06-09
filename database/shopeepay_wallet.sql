@@ -9,10 +9,10 @@ CREATE TABLE IF NOT EXISTS users (
   transaction_pin VARCHAR(255) NOT NULL,
   phone VARCHAR(20) UNIQUE,
   role ENUM('user', 'admin', 'auditor') DEFAULT 'user',
-  reset_pin_token VARCHAR(255) DEFAULT NULL,
-  reset_pin_expires TIMESTAMP DEFAULT NULL,
   reset_password_token VARCHAR(255) DEFAULT NULL,
   reset_password_expires TIMESTAMP DEFAULT NULL,
+  reset_password_requested_at TIMESTAMP DEFAULT NULL,
+  last_pin_reset_at TIMESTAMP DEFAULT NULL,
   created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
 );

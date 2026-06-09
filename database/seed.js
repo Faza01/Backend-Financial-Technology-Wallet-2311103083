@@ -15,22 +15,10 @@ async function seed() {
       FROM INFORMATION_SCHEMA.COLUMNS 
       WHERE TABLE_SCHEMA = ? 
         AND TABLE_NAME = 'users' 
-        AND COLUMN_NAME IN ('reset_pin_token', 'reset_pin_expires', 'reset_password_token', 'reset_password_expires')
+        AND COLUMN_NAME IN ('reset_password_token', 'reset_password_expires', 'reset_password_requested_at', 'last_pin_reset_at')
     `, [dbName]);
 
     const existingColumns = columns.map(c => c.COLUMN_NAME);
-
-    if (!existingColumns.includes('reset_pin_token')) {
-      console.log('⚡ Adding reset_pin_token column to users table...');
-      await pool.execute('ALTER TABLE users ADD COLUMN reset_pin_token VARCHAR(255) DEFAULT NULL');
-      console.log('✅ Column reset_pin_token added.');
-    }
-
-    if (!existingColumns.includes('reset_pin_expires')) {
-      console.log('⚡ Adding reset_pin_expires column to users table...');
-      await pool.execute('ALTER TABLE users ADD COLUMN reset_pin_expires TIMESTAMP DEFAULT NULL');
-      console.log('✅ Column reset_pin_expires added.');
-    }
 
     if (!existingColumns.includes('reset_password_token')) {
       console.log('⚡ Adding reset_password_token column to users table...');
@@ -42,6 +30,18 @@ async function seed() {
       console.log('⚡ Adding reset_password_expires column to users table...');
       await pool.execute('ALTER TABLE users ADD COLUMN reset_password_expires TIMESTAMP DEFAULT NULL');
       console.log('✅ Column reset_password_expires added.');
+    }
+
+    if (!existingColumns.includes('reset_password_requested_at')) {
+      console.log('⚡ Adding reset_password_requested_at column to users table...');
+      await pool.execute('ALTER TABLE users ADD COLUMN reset_password_requested_at TIMESTAMP DEFAULT NULL');
+      console.log('✅ Column reset_password_requested_at added.');
+    }
+
+    if (!existingColumns.includes('last_pin_reset_at')) {
+      console.log('⚡ Adding last_pin_reset_at column to users table...');
+      await pool.execute('ALTER TABLE users ADD COLUMN last_pin_reset_at TIMESTAMP DEFAULT NULL');
+      console.log('✅ Column last_pin_reset_at added.');
     }
 
     // 2. Seed Admin User

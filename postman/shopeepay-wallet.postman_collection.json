@@ -200,26 +200,19 @@
           }
         },
         {
-          "name": "Forgot PIN (public)",
+          "name": "Reset PIN (auth required)",
           "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            "auth": {
+              "type": "bearer",
+              "bearer": [
+                {
+                  "key": "token",
+                  "value": "{{token}}",
+                  "type": "string"
+                }
+              ]
             },
-            "url": "{{baseUrl}}/api/auth/forgot-pin"
-          }
-        },
-        {
-          "name": "Reset PIN (public)",
-          "request": {
-            "method": "POST",
+            "method": "PUT",
             "header": [
               {
                 "key": "Content-Type",
@@ -228,7 +221,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"user@example.com\",\n  \"token\": \"TOKEN_HERE\",\n  \"new_pin\": \"654321\"\n}"
+              "raw": "{\n  \"password\": \"password123\",\n  \"new_pin\": \"654321\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/reset-pin"
           }

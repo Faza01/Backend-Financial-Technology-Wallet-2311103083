@@ -170,72 +170,65 @@ const getProfile = async (req, res) => {
 };
 
 /**
- * forgotPin - Meminta token reset PIN transaksi
- * POST /api/auth/forgot-pin
- */
-const forgotPin = async (req, res) => {
-  try {
-    const { email } = req.body;
-
-    if (!email) {
-      return errorResponse(res, 'Email wajib diisi', 400);
-    }
-
-    const user = await User.findByEmail(email);
-    if (!user) {
-      return errorResponse(res, 'User dengan email tersebut tidak ditemukan', 404);
-    }
-
-    // Generate random 6-digit number token
-    const token = Math.floor(100000 + Math.random() * 900000).toString();
-    const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 menit dari sekarang
-
-    await User.saveResetPinToken(email, token, expiresAt);
-
-    return successResponse(res, 'Token reset PIN berhasil dibuat. Silakan gunakan token ini untuk mereset PIN Anda.', {
-      token: token
-    });
-  } catch (error) {
-    console.error('Forgot PIN error:', error);
-    return errorResponse(res, 'Terjadi kesalahan saat memproses forgot PIN');
-  }
-};
-
-/**
- * resetPin - Mereset PIN transaksi menggunakan token reset
- * POST /api/auth/reset-pin
+ * resetPin - Mereset PIN transaksi menggunakan verifikasi password
+ * PUT /api/auth/reset-pin (Protected)
  */
 const resetPin = async (req, res) => {
   try {
-    const { email, token, new_pin } = req.body;
+    const { password, new_pin } = req.body;
 
-    if (!email || !token || !new_pin) {
-      return errorResponse(res, 'Email, token, dan new_pin wajib diisi', 400);
+    if (!password || !new_pin) {
+      return errorResponse(res, 'Password login saat ini dan new_pin wajib diisi', 400);
     }
 
     if (!isValidTransactionPin(new_pin)) {
       return errorResponse(res, 'PIN transaksi baru harus 6 digit angka', 400);
     }
 
-    const user = await User.findByEmailAndResetToken(email, token);
+    // Cari user beserta password hash berdasarkan email di req.user
+    const user = await User.findByEmailWithPassword(req.authUser.email);
     if (!user) {
-      return errorResponse(res, 'Token reset PIN tidak valid untuk email tersebut', 400);
+      return errorResponse(res, 'User tidak ditemukan', 404);
     }
 
-    // Periksa kedaluwarsa token
-    const expires = new Date(user.reset_pin_expires);
-    if (expires < new Date()) {
-      return errorResponse(res, 'Token reset PIN sudah kedaluwarsa', 400);
+    // Pengecekan cooldown reset PIN (24 jam)
+    if (user.last_pin_reset_at) {
+      const timeDiff = Date.now() - new Date(user.last_pin_reset_at).getTime();
+      const oneDayInMs = 24 * 60 * 60 * 1000;
+      if (timeDiff < oneDayInMs) {
+        const timeLeftMs = oneDayInMs - timeDiff;
+        let hoursLeft = Math.floor(timeLeftMs / (60 * 60 * 1000));
+        let minutesLeft = Math.ceil((timeLeftMs % (60 * 60 * 1000)) / (60 * 1000));
+        
+        if (minutesLeft === 60) {
+          hoursLeft += 1;
+          minutesLeft = 0;
+        }
+        
+        let message = 'Anda hanya dapat mereset PIN transaksi sekali dalam 24 jam. ';
+        if (hoursLeft > 0) {
+          message += `Silakan tunggu ${hoursLeft} jam${minutesLeft > 0 ? ` ${minutesLeft} menit` : ''} lagi.`;
+        } else {
+          message += `Silakan tunggu ${minutesLeft} menit lagi.`;
+        }
+        return errorResponse(res, message, 429);
+      }
+    }
+
+    // Bandingkan password login yang dimasukkan dengan hash di database
+    const isPasswordValid = await bcrypt.compare(password, user.password);
+    if (!isPasswordValid) {
+      return errorResponse(res, 'Password login salah', 401);
     }
 
     // Hash PIN baru
     const hashedPin = await hashTransactionPin(new_pin);
 
-    // Update PIN dan bersihkan token
-    await User.updateTransactionPin(user.id, hashedPin);
-    await User.clearResetPinToken(user.id);
+    // Update PIN transaksi beserta timestamp reset terakhir
+    const lastPinResetAt = new Date();
+    await User.updateTransactionPinWithTimestamp(user.id, hashedPin, lastPinResetAt);
 
-    return successResponse(res, 'PIN transaksi berhasil direset');
+    return successResponse(res, 'PIN transaksi berhasil diperbarui');
   } catch (error) {
     console.error('Reset PIN error:', error);
     return errorResponse(res, 'Terjadi kesalahan saat mereset PIN');
@@ -243,8 +236,8 @@ const resetPin = async (req, res) => {
 };
 
 /**
- * forgotPassword - Meminta token reset password
- * POST /api/auth/forgot-password
+ * forgotPassword - Meminta token reset password (dengan cooldown 60 detik)
+ * POST /api/auth/forgot-password (Public)
  */
 const forgotPassword = async (req, res) => {
   try {
@@ -259,15 +252,26 @@ const forgotPassword = async (req, res) => {
       return errorResponse(res, 'User dengan email tersebut tidak ditemukan', 404);
     }
 
+    // Pengecekan cooldown spam request (60 detik)
+    if (user.reset_password_requested_at) {
+      const timeDiff = Date.now() - new Date(user.reset_password_requested_at).getTime();
+      const secondsLeft = Math.ceil((60000 - timeDiff) / 1000);
+      if (secondsLeft > 0) {
+        return errorResponse(res, `Silakan tunggu ${secondsLeft} detik sebelum meminta token reset password kembali.`, 429);
+      }
+    }
+
     // Generate random 6-digit number token for password reset
     const token = Math.floor(100000 + Math.random() * 900000).toString();
     const expiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 menit dari sekarang
+    const requestedAt = new Date();
 
-    await User.saveResetPasswordToken(email, token, expiresAt);
+    await User.saveResetPasswordToken(email, token, expiresAt, requestedAt);
 
-    return successResponse(res, 'Token reset password berhasil dibuat. Silakan gunakan token ini untuk mereset password Anda.', {
-      token: token
-    });
+    // Simulasi pengiriman email ke terminal console (aman dari intip response JSON)
+    console.log(`\n🔑 [RESET PASSWORD TOKEN] Email: ${email} | Token: ${token}\n`);
+
+    return successResponse(res, 'Token reset password telah dikirim. Silakan cek konsol/log terminal server Anda untuk menyalin token tersebut.');
   } catch (error) {
     console.error('Forgot password error:', error);
     return errorResponse(res, 'Terjadi kesalahan saat memproses forgot password');
@@ -276,7 +280,7 @@ const forgotPassword = async (req, res) => {
 
 /**
  * resetPassword - Mereset password menggunakan token reset
- * POST /api/auth/reset-password
+ * POST /api/auth/reset-password (Public)
  */
 const resetPassword = async (req, res) => {
   try {
@@ -316,4 +320,4 @@ const resetPassword = async (req, res) => {
   }
 };
 
-module.exports = { register, login, logout, getProfile, forgotPin, resetPin, forgotPassword, resetPassword };
+module.exports = { register, login, logout, getProfile, resetPin, forgotPassword, resetPassword };

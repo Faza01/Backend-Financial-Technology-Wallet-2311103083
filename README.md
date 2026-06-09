@@ -457,42 +457,33 @@ Ini akan membuat:
 ### Restriksi Registrasi Publik
 Registrasi publik (`POST /api/auth/register`) hanya diperbolehkan untuk mendaftar sebagai `user`. Apabila mencoba mendaftar dengan `role: "admin"` atau `role: "auditor"`, API akan mengembalikan status `403 Forbidden`. Pembuatan `auditor` baru dapat dilakukan oleh Admin melalui endpoint Admin CRUD user (`POST /api/users`).
 
-### Fitur Lupa PIN Transaksi (Forgot PIN)
-1. **Request Reset Token**
-   `POST /api/auth/forgot-pin`
-   Body:
-   ```json
-   {
-     "email": "user@example.com"
-   }
-   ```
-   Akan mengembalikan token acak 6 digit yang berlaku selama 15 menit.
+### Fitur Reset PIN Transaksi (Reset PIN)
+Fungsi ini bersifat **Protected** (memerlukan token Bearer JWT pengguna). Pengguna memverifikasi identitasnya menggunakan password login saat ini untuk memperbarui PIN transaksi.
 
-2. **Reset PIN**
-   `POST /api/auth/reset-pin`
-   Body:
-   ```json
-   {
-     "email": "user@example.com",
-     "token": "878535",
-     "new_pin": "987654"
-   }
-   ```
-   Akan mengupdate PIN transaksi pengguna dengan PIN baru.
+**Reset PIN**
+`PUT /api/auth/reset-pin` (Protected)
+Body:
+```json
+{
+  "password": "password_login_saat_ini",
+  "new_pin": "654321"
+}
+```
 
 ### Fitur Lupa Password (Forgot Password)
 1. **Request Reset Token**
-   `POST /api/auth/forgot-password`
+   `POST /api/auth/forgot-password` (Public)
    Body:
    ```json
    {
      "email": "user@example.com"
    }
    ```
-   Akan mengembalikan token acak 6 digit yang berlaku selama 15 menit.
+   - Mengirimkan token acak 6 digit dengan mencetaknya langsung ke **konsol/log terminal server** (simulasi kotak masuk email).
+   - Memiliki **jeda/cooldown selama 60 detik**. Apabila meminta token kembali sebelum 60 detik, server mengembalikan status `429 Too Many Requests`.
 
 2. **Reset Password**
-   `POST /api/auth/reset-password`
+   `POST /api/auth/reset-password` (Public)
    Body:
    ```json
    {
@@ -501,4 +492,4 @@ Registrasi publik (`POST /api/auth/register`) hanya diperbolehkan untuk mendafta
      "new_password": "newsecurepassword123"
    }
    ```
-   Akan mengupdate password pengguna dengan password baru.
+   Memperbarui password pengguna dengan password baru jika token valid dan belum kedaluwarsa (berlaku 15 menit).
