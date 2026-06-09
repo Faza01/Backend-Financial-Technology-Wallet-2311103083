@@ -443,11 +443,62 @@ GET /api/dashboard
 
 Dashboard berisi total user, total wallet, total saldo seluruh wallet, total transaksi, jumlah transaksi per status, jumlah transaksi per tipe, dan 5 transaksi terbaru.
 
-### Migration Database Lama
-Jika database sudah pernah dibuat sebelum fitur PIN/reverse, jalankan migration:
+### Database Seeding & Migration Baru
+Untuk melakukan auto-migration kolom baru (`reset_pin_token`, `reset_pin_expires`, `reset_password_token`, `reset_password_expires`) dan memasukkan data default `admin` dan `auditor`, jalankan perintah:
 
 ```bash
-source database/migrations/001_add_missing_wallet_features.sql
+npm run seed
 ```
 
-User lama yang belum memiliki `transaction_pin` perlu diperbarui PIN-nya lewat endpoint update user sebelum bisa melakukan transaksi.
+Ini akan membuat:
+- **Admin**: `admin@wallet.com` (password: `admin123`, PIN: `123456`)
+- **Auditor**: `auditor@wallet.com` (password: `auditor123`, PIN: `123456`)
+
+### Restriksi Registrasi Publik
+Registrasi publik (`POST /api/auth/register`) hanya diperbolehkan untuk mendaftar sebagai `user`. Apabila mencoba mendaftar dengan `role: "admin"` atau `role: "auditor"`, API akan mengembalikan status `403 Forbidden`. Pembuatan `auditor` baru dapat dilakukan oleh Admin melalui endpoint Admin CRUD user (`POST /api/users`).
+
+### Fitur Lupa PIN Transaksi (Forgot PIN)
+1. **Request Reset Token**
+   `POST /api/auth/forgot-pin`
+   Body:
+   ```json
+   {
+     "email": "user@example.com"
+   }
+   ```
+   Akan mengembalikan token acak 6 digit yang berlaku selama 15 menit.
+
+2. **Reset PIN**
+   `POST /api/auth/reset-pin`
+   Body:
+   ```json
+   {
+     "email": "user@example.com",
+     "token": "878535",
+     "new_pin": "987654"
+   }
+   ```
+   Akan mengupdate PIN transaksi pengguna dengan PIN baru.
+
+### Fitur Lupa Password (Forgot Password)
+1. **Request Reset Token**
+   `POST /api/auth/forgot-password`
+   Body:
+   ```json
+   {
+     "email": "user@example.com"
+   }
+   ```
+   Akan mengembalikan token acak 6 digit yang berlaku selama 15 menit.
+
+2. **Reset Password**
+   `POST /api/auth/reset-password`
+   Body:
+   ```json
+   {
+     "email": "user@example.com",
+     "token": "800106",
+     "new_password": "newsecurepassword123"
+   }
+   ```
+   Akan mengupdate password pengguna dengan password baru.

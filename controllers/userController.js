@@ -10,7 +10,16 @@ const { isValidTransactionPin, hashTransactionPin } = require('../utils/pin');
  */
 const getAllUsers = async (req, res) => {
   try {
-    const users = await User.findAll();
+    const { role } = req.query;
+
+    if (role) {
+      const allowedRoles = ['admin', 'user', 'auditor'];
+      if (!allowedRoles.includes(role)) {
+        return errorResponse(res, `Filter role tidak valid. Pilih: ${allowedRoles.join(', ')}`, 400);
+      }
+    }
+
+    const users = await User.findAll(role);
     return successResponse(res, 'Data semua user berhasil diambil', { users });
   } catch (error) {
     console.error('Get all users error:', error);

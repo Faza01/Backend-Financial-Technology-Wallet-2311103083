@@ -11,12 +11,20 @@ const User = {
         return result;
     },
     
-    // menampilkan semua user
-    findAll: async () => {
-        const [rows] = await pool.execute(
-            'SELECT id, name, email, phone, role, created_at, updated_at FROM users ORDER BY id DESC'
-        );
-        return rows;
+    // menampilkan semua user (opsional filter berdasarkan role)
+    findAll: async (role = null) => {
+        if (role) {
+            const [rows] = await pool.execute(
+                'SELECT id, name, email, phone, role, created_at, updated_at FROM users WHERE role = ? ORDER BY id DESC',
+                [role]
+            );
+            return rows;
+        } else {
+            const [rows] = await pool.execute(
+                'SELECT id, name, email, phone, role, created_at, updated_at FROM users ORDER BY id DESC'
+            );
+            return rows;
+        }
     },
 
     // mencari user berdasarkan id
@@ -101,6 +109,60 @@ const User = {
     count: async () => {
         const [rows] = await pool.execute('SELECT COUNT(*) as total FROM users');
         return rows[0].total;
+    },
+
+    // menyimpan token reset PIN transaksi
+    saveResetPinToken: async (email, token, expiresAt) => {
+        const [result] = await pool.execute(
+            'UPDATE users SET reset_pin_token = ?, reset_pin_expires = ? WHERE email = ?',
+            [token, expiresAt, email]
+        );
+        return result;
+    },
+
+    // mencari user berdasarkan email dan token reset PIN transaksi
+    findByEmailAndResetToken: async (email, token) => {
+        const [rows] = await pool.execute(
+            'SELECT * FROM users WHERE email = ? AND reset_pin_token = ?',
+            [email, token]
+        );
+        return rows[0];
+    },
+
+    // menghapus token reset PIN transaksi
+    clearResetPinToken: async (id) => {
+        const [result] = await pool.execute(
+            'UPDATE users SET reset_pin_token = NULL, reset_pin_expires = NULL WHERE id = ?',
+            [id]
+        );
+        return result;
+    },
+
+    // menyimpan token reset password
+    saveResetPasswordToken: async (email, token, expiresAt) => {
+        const [result] = await pool.execute(
+            'UPDATE users SET reset_password_token = ?, reset_password_expires = ? WHERE email = ?',
+            [token, expiresAt, email]
+        );
+        return result;
+    },
+
+    // mencari user berdasarkan email dan token reset password
+    findByEmailAndResetPasswordToken: async (email, token) => {
+        const [rows] = await pool.execute(
+            'SELECT * FROM users WHERE email = ? AND reset_password_token = ?',
+            [email, token]
+        );
+        return rows[0];
+    },
+
+    // menghapus token reset password
+    clearResetPasswordToken: async (id) => {
+        const [result] = await pool.execute(
+            'UPDATE users SET reset_password_token = NULL, reset_password_expires = NULL WHERE id = ?',
+            [id]
+        );
+        return result;
     },
 };
 

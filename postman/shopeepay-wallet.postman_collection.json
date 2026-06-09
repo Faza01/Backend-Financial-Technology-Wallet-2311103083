@@ -123,7 +123,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"admin@example.com\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"admin@wallet.com\",\n  \"password\": \"admin123\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/login"
           }
@@ -154,7 +154,7 @@
             ],
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"auditor@example.com\",\n  \"password\": \"password123\"\n}"
+              "raw": "{\n  \"email\": \"auditor@wallet.com\",\n  \"password\": \"auditor123\"\n}"
             },
             "url": "{{baseUrl}}/api/auth/login"
           }
@@ -205,6 +205,74 @@
             "method": "POST",
             "url": "{{baseUrl}}/api/auth/logout"
           }
+        },
+        {
+          "name": "Forgot PIN (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-pin"
+          }
+        },
+        {
+          "name": "Reset PIN (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"token\": \"TOKEN_HERE\",\n  \"new_pin\": \"654321\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/reset-pin"
+          }
+        },
+        {
+          "name": "Forgot Password (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/forgot-password"
+          }
+        },
+        {
+          "name": "Reset Password (public)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"user@example.com\",\n  \"token\": \"TOKEN_HERE\",\n  \"new_password\": \"newpassword123\"\n}"
+            },
+            "url": "{{baseUrl}}/api/auth/reset-password"
+          }
         }
       ]
     },
@@ -225,7 +293,23 @@
               ]
             },
             "method": "GET",
-            "url": "{{baseUrl}}/api/users"
+            "url": {
+              "raw": "{{baseUrl}}/api/users?role=auditor",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "users"
+              ],
+              "query": [
+                {
+                  "key": "role",
+                  "value": "auditor",
+                  "description": "Filter by role: admin, user, auditor (Optional)"
+                }
+              ]
+            }
           }
         },
         {
